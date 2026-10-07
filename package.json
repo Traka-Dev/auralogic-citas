@@ -1,0 +1,72 @@
+{
+  "name": "auralogic-citas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Auralogic Citas: CRM open source de WhatsApp y citas construido con Astro",
+  "homepage": "https://auralogic.dev/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Traka-Dev/auralogic-citas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Traka-Dev/auralogic-citas/issues"
+  },
+  "keywords": [
+    "auralogic",
+    "astro",
+    "crm",
+    "whatsapp",
+    "appointments",
+    "open-source",
+    "self-hosted"
+  ],
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env ./node_modules/astro/bin/astro.mjs dev --host 127.0.0.1",
+    "build": "astro build",
+    "start": "node --env-file-if-exists=.env dist/server/entry.mjs",
+    "check": "astro check",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "db:migrate": "tsx --env-file-if-exists=.env scripts/migrate.ts",
+    "db:seed": "tsx --env-file-if-exists=.env scripts/seed.ts",
+    "whatsapp:worker": "tsx --env-file-if-exists=.env scripts/whatsapp-worker.ts",
+    "verify": "npm run check && npm run lint && npm run format:check && npm test && npm run build"
+  },
+  "dependencies": {
+    "@astrojs/node": "11.1.7",
+    "@whiskeysockets/baileys": "6.7.24",
+    "astro": "7.3.7",
+    "libphonenumber-js": "^1.12.0",
+    "luxon": "3.7.2",
+    "pino": "^10.0.0",
+    "qrcode": "^1.5.4",
+    "zod": "4.6.5",
+    "tsx": "^4.20.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.0",
+    "@types/luxon": "^3.7.0",
+    "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.6",
+    "@vitest/coverage-v8": "5.0.3",
+    "eslint": "10.12.0",
+    "eslint-plugin-astro": "3.2.1",
+    "globals": "^16.0.0",
+    "prettier": "3.9.9",
+    "prettier-plugin-astro": "1.1.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.3"
+  }
+}

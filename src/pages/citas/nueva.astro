@@ -1,0 +1,22 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import AppointmentForm from '../../components/AppointmentForm.astro';
+---
+
+<Layout title="Nueva cita">
+  <PageHeader
+    title="Haz espacio para una nueva visita"
+    subtitle="Elige el servicio, quién atiende y cuándo. Nos encargamos de comprobar el horario."
+    eyebrow="Nueva cita"
+  >
+    <a class="button secondary" href="/agenda">
+      Volver a la agenda
+    </a>
+  </PageHeader>
+  <section class="panel padded">
+    <AppointmentForm
+      clientId={Astro.url.searchParams.get('cliente') || undefined}
+    />
+  </section>
+</Layout>

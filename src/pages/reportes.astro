@@ -1,0 +1,120 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHeader from '../components/PageHeader.astro';
+import { db } from '../lib/db';
+import { DateTime } from 'luxon';
+import { appointments, iso, money } from '../lib/crm';
+const auth = Astro.locals.auth!;
+if (auth.role === 'agent')
+  return Astro.redirect(
+    '/?error=Los%20reportes%20requieren%20permisos%20de%20administraci%C3%B3n',
+  );
+const raw = DateTime.fromISO(`${Astro.url.searchParams.get('mes') || ''}-01`, {
+  zone: auth.business.timezone,
+});
+const start = (
+  raw.isValid ? raw : DateTime.now().setZone(auth.business.timezone)
+).startOf('month');
+const end = start.plus({ months: 1 });
+const list = appointments(db(), auth.business.id, iso(start), iso(end));
+const attended = list.filter((a) => a.status === 'completed').length;
+const missed = list.filter((a) => a.status === 'no_show').length;
+const cancelled = list.filter((a) => a.status === 'cancelled').length;
+const income = db().get<{ total: number }>(
+  'SELECT COALESCE(SUM(amount_cents),0) total FROM payments WHERE business_id=? AND created_at>=? AND created_at<?',
+  auth.business.id,
+  iso(start),
+  iso(end),
+)!.total;
+const grouped = [...new Set(list.map((a) => a.staff_id))].map((id) => {
+  const rows = list.filter((a) => a.staff_id === id);
+  return {
+    name: rows[0]!.staff_name,
+    total: rows.length,
+    completed: rows.filter((a) => a.status === 'completed').length,
+    missed: rows.filter((a) => a.status === 'no_show').length,
+  };
+});
+---
+
+<Layout title="Reportes">
+  <PageHeader
+    title="Entiende cómo va tu negocio"
+    subtitle="Resultados de citas y cobros, con definiciones claras."
+    eyebrow="Decisiones con información"
+  />
+  <form method="get" class="toolbar">
+    <label>
+      Periodo
+      <input type="month" name="mes" value={start.toFormat('yyyy-MM')} />
+    </label>
+    <button class="button secondary">Consultar</button>
+  </form>
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Citas del periodo</div>
+      <span class="stat-value">{list.length}</span>
+      <p class="stat-foot">Por fecha de atención prevista</p>
+    </div>
+    <div class="stat featured">
+      <div class="stat-label">Asistencia</div>
+      <span class="stat-value">
+        {attended + missed
+          ? `${Math.round((attended / (attended + missed)) * 100)}%`
+          : '—'}
+      </span>
+      <p class="stat-foot">
+        {attended} atendidas · {missed} ausencias
+      </p>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Cancelaciones</div>
+      <span class="stat-value">{cancelled}</span>
+      <p class="stat-foot">Estado actual de las citas del periodo</p>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Cobros registrados</div>
+      <span class="stat-value" style="font-size:25px">
+        {money(income, auth.business.currency)}
+      </span>
+      <p class="stat-foot">Por fecha de registro del cobro</p>
+    </div>
+  </div>
+  <section class="panel">
+    <div class="panel-heading">
+      <h2>Atención por prestador</h2>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Prestador</th>
+            <th>Citas</th>
+            <th>Atendidas</th>
+            <th>Ausencias</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grouped.map((g) => (
+            <tr>
+              <td>{g.name}</td>
+              <td>{g.total}</td>
+              <td>{g.completed}</td>
+              <td>{g.missed}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    {!grouped.length && (
+      <div class="empty">
+        <p>No hay citas en este periodo.</p>
+      </div>
+    )}
+  </section>
+  <div class="notice section-gap">
+    La asistencia se calcula sobre citas atendidas y ausencias. Las pendientes y
+    canceladas no entran en ese porcentaje. Reservar una cita no cuenta como
+    ingreso.
+  </div>
+</Layout>

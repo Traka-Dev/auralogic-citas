@@ -1,0 +1,208 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Status from '../components/Status.astro';
+import Icon from '../components/Icon.astro';
+import Form from '../components/Form.astro';
+import { db } from '../lib/db';
+import { appointments, formatDate, iso } from '../lib/crm';
+import { DateTime } from 'luxon';
+import type { Staff } from '../lib/types';
+const auth = Astro.locals.auth!;
+const store = db();
+const requested = DateTime.fromISO(Astro.url.searchParams.get('fecha') || '', {
+  zone: auth.business.timezone,
+});
+const start = (
+  requested.isValid ? requested : DateTime.now().setZone(auth.business.timezone)
+).startOf('week');
+const selectedStaff = Astro.url.searchParams.get('prestador') || '';
+const staff = store.all<Staff>(
+  'SELECT * FROM staff WHERE business_id=? AND active=1 ORDER BY name',
+  auth.business.id,
+);
+const list = appointments(
+  store,
+  auth.business.id,
+  iso(start),
+  iso(start.plus({ weeks: 1 })),
+).filter((a) => !selectedStaff || a.staff_id === selectedStaff);
+const days = Array.from({ length: 7 }, (_, i) => start.plus({ days: i }));
+const today = DateTime.now().setZone(auth.business.timezone).toISODate();
+const blocks = store.all<{
+  id: string;
+  staff_name: string;
+  reason: string;
+  starts_at: string;
+  ends_at: string;
+}>(
+  `SELECT b.*,s.name staff_name FROM blocks b JOIN staff s ON b.staff_id=s.id WHERE b.business_id=? AND b.starts_at<? AND b.ends_at>? ORDER BY b.starts_at`,
+  auth.business.id,
+  iso(start.plus({ weeks: 1 })),
+  iso(start),
+);
+---
+
+<Layout title="Agenda">
+  <PageHeader
+    title="Tu semana, a la vista"
+    subtitle={`Horarios de ${auth.business.timezone}. Las reservas se validan al guardar.`}
+    eyebrow="Tiempo bien cuidado"
+  >
+    <a href="/citas/nueva" class="button">
+      <Icon name="plus" size={17} />
+      Nueva cita
+    </a>
+  </PageHeader>
+  <div class="toolbar">
+    <div class="inline-actions">
+      <a
+        class="button secondary small"
+        href={`/agenda?fecha=${start.minus({ weeks: 1 }).toISODate()}&prestador=${selectedStaff}`}
+      >
+        ← Anterior
+      </a>
+      <a class="button secondary small" href="/agenda">
+        Hoy
+      </a>
+      <a
+        class="button secondary small"
+        href={`/agenda?fecha=${start.plus({ weeks: 1 }).toISODate()}&prestador=${selectedStaff}`}
+      >
+        Siguiente →
+      </a>
+    </div>
+    <strong style="font-size:13px">
+      {start.setLocale('es').toFormat('d LLL')} —{' '}
+      {start.plus({ days: 6 }).setLocale('es').toFormat('d LLL yyyy')}
+    </strong>
+    <form method="get" class="inline-actions">
+      <input type="hidden" name="fecha" value={start.toISODate()} />
+      <label>
+        <span class="sr-only">Filtrar por prestador</span>
+        <select name="prestador" aria-label="Filtrar por prestador">
+          <option value="">Todo el equipo</option>
+          {staff.map((s) => (
+            <option value={s.id} selected={selectedStaff === s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button class="button secondary small">Filtrar</button>
+    </form>
+  </div>
+  <section class="panel table-wrap">
+    <div class="week-grid">
+      {days.map((day) => {
+        const dayItems = list.filter(
+          (a) =>
+            DateTime.fromISO(a.starts_at)
+              .setZone(auth.business.timezone)
+              .toISODate() === day.toISODate(),
+        );
+        return (
+          <div class:list={['week-day', { today: day.toISODate() === today }]}>
+            <div class="day-heading">
+              {day.setLocale('es').toFormat('ccc')}
+              <strong>{day.day}</strong>
+            </div>
+            {dayItems.length ? (
+              dayItems.map((a) => (
+                <a
+                  class="calendar-card"
+                  href={`/citas/${a.id}`}
+                  style={`border-left-color:${a.color};${a.status === 'cancelled' ? 'opacity:.55' : ''}`}
+                >
+                  <span>
+                    {formatDate(a.starts_at, auth.business.timezone, 'HH:mm')} —{' '}
+                    {formatDate(a.ends_at, auth.business.timezone, 'HH:mm')}
+                  </span>
+                  <strong>{a.client_name}</strong>
+                  <p>{a.service_name}</p>
+                  <p>{a.staff_name}</p>
+                  <Status status={a.status} />
+                </a>
+              ))
+            ) : (
+              <p class="day-empty">Sin citas</p>
+            )}
+            <a
+              href={`/citas/nueva?fecha=${day.toISODate()}`}
+              class="text-link"
+              style="font-size:10px;display:flex;justify-content:center;margin-top:15px"
+            >
+              + Reservar
+            </a>
+          </div>
+        );
+      })}
+    </div>
+  </section>
+  {auth.role !== 'agent' && (
+    <div class="equal-grid section-gap">
+      <section class="panel padded">
+        <h2>Bloquear disponibilidad</h2>
+        <p class="muted" style="margin:8px 0 20px">
+          Descansos, vacaciones o tiempo para preparar el servicio.
+        </p>
+        <Form action="block" class="form-grid">
+          <label class="span-2">
+            Prestador
+            <select name="staff_id" required>
+              {staff.map((s) => (
+                <option value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Inicio
+            <input type="datetime-local" name="starts_at" required />
+          </label>
+          <label>
+            Final
+            <input type="datetime-local" name="ends_at" required />
+          </label>
+          <label class="span-2">
+            Motivo
+            <input
+              name="reason"
+              required
+              maxlength="200"
+              placeholder="Descanso, vacaciones…"
+            />
+          </label>
+          <button class="button secondary span-2" disabled={!staff.length}>
+            Guardar bloqueo
+          </button>
+        </Form>
+      </section>
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Bloqueos de la semana</h2>
+        </div>
+        {blocks.length ? (
+          blocks.map((b) => (
+            <div class="note">
+              <p>
+                {b.staff_name} · {b.reason}
+              </p>
+              <small>
+                {formatDate(b.starts_at, auth.business.timezone)} —{' '}
+                {formatDate(b.ends_at, auth.business.timezone)}
+              </small>
+              <Form action="remove-block" class="section-gap">
+                <input type="hidden" name="id" value={b.id} />
+                <button class="button secondary small">Eliminar bloqueo</button>
+              </Form>
+            </div>
+          ))
+        ) : (
+          <div class="empty">
+            <p>No hay bloqueos en esta semana.</p>
+          </div>
+        )}
+      </section>
+    </div>
+  )}
+</Layout>

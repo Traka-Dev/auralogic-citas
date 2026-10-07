@@ -1,0 +1,152 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import Empty from '../../components/Empty.astro';
+import Form from '../../components/Form.astro';
+import Icon from '../../components/Icon.astro';
+import { db } from '../../lib/db';
+import type { Client } from '../../lib/types';
+const auth = Astro.locals.auth!;
+const search = (Astro.url.searchParams.get('q') || '').slice(0, 100);
+const archived = Astro.url.searchParams.get('estado') === 'archivados';
+const rows = db().all<Client>(
+  "SELECT * FROM clients WHERE business_id=? AND archived=? AND (name LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\') ORDER BY name LIMIT 200",
+  auth.business.id,
+  archived ? 1 : 0,
+  ...Array(3).fill(`%${search.replace(/[\\%_]/g, '\\$&')}%`),
+);
+---
+
+<Layout title="Clientes">
+  <PageHeader
+    title="Tus clientes"
+    subtitle="Conoce a cada persona antes de su próxima visita."
+    eyebrow="Relaciones que crecen"
+  >
+    <a href="#nuevo-cliente" class="button">
+      <Icon name="plus" size={17} />
+      Nuevo cliente
+    </a>
+  </PageHeader>
+  <form method="get" class="toolbar">
+    <input
+      type="search"
+      name="q"
+      value={search}
+      placeholder="Buscar por nombre, teléfono o etiqueta"
+      aria-label="Buscar clientes"
+    />
+    {archived && <input type="hidden" name="estado" value="archivados" />}
+    <button class="button secondary">
+      <Icon name="search" size={16} />
+      Buscar
+    </button>
+    <div class="filter-tabs">
+      <a href="/clientes" class:list={{ selected: !archived }}>
+        Activos
+      </a>
+      <a href="/clientes?estado=archivados" class:list={{ selected: archived }}>
+        Archivados
+      </a>
+    </div>
+  </form>
+  <section class="panel">
+    {rows.length ? (
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Teléfono</th>
+              <th>Etiquetas</th>
+              <th>Origen</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c) => (
+              <tr>
+                <td>
+                  <a href={`/clientes/${c.id}`} class="client-cell">
+                    <span class="avatar">{c.name.slice(0, 1)}</span>
+                    <div>
+                      <strong>{c.name}</strong>
+                      <small>{c.email || 'Sin correo registrado'}</small>
+                    </div>
+                  </a>
+                </td>
+                <td>{c.phone || 'Identidad de WhatsApp'}</td>
+                <td>
+                  {c.tags
+                    .split(',')
+                    .filter(Boolean)
+                    .map((tag) => (
+                      <span class="tag">{tag.trim()}</span>
+                    ))}
+                </td>
+                <td>{c.source}</td>
+                <td>
+                  <a class="text-link" href={`/clientes/${c.id}`}>
+                    Ver ficha
+                    <Icon name="arrow" size={14} />
+                  </a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <Empty
+        icon="clients"
+        title={
+          search ? 'Sin coincidencias' : 'Tu próxima relación empieza aquí'
+        }
+        description={
+          search
+            ? 'Prueba otro nombre, teléfono o etiqueta.'
+            : 'Registra a tu primer cliente y tendrás sus datos a mano para reservar.'
+        }
+      />
+    )}
+  </section>
+  <section class="panel padded section-gap" id="nuevo-cliente">
+    <h2>Nuevo cliente</h2>
+    <p class="muted" style="margin:8px 0 22px">
+      Los datos pertenecen únicamente a tu negocio.
+    </p>
+    <Form action="client" class="form-grid">
+      <label>
+        Nombre
+        <input name="name" required maxlength="100" autocomplete="name" />
+      </label>
+      <label>
+        Teléfono con prefijo internacional
+        <input
+          type="tel"
+          name="phone"
+          placeholder="+52 55 1234 5678"
+          required
+          autocomplete="tel"
+        />
+      </label>
+      <label>
+        Correo · opcional
+        <input name="email" type="email" maxlength="254" autocomplete="email" />
+      </label>
+      <label>
+        Etiquetas · opcional
+        <input
+          name="tags"
+          maxlength="200"
+          placeholder="Frecuente, Corte, Coloración"
+        />
+        <small>Separa las etiquetas con comas.</small>
+      </label>
+      <div class="span-2 form-footer">
+        <span class="muted">Luego podrás añadir notas y reservar citas.</span>
+        <button class="button">Guardar cliente</button>
+      </div>
+    </Form>
+  </section>
+</Layout>

@@ -1,0 +1,52 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Icon from '../components/Icon.astro';
+import Brand from '../components/Brand.astro';
+import StudioCredit from '../components/StudioCredit.astro';
+if (Astro.locals.auth) return Astro.redirect('/');
+---
+
+<Layout title="Iniciar sesión" public>
+  <div class="auth-card">
+    <Brand href="/login" />
+    <h1>Tu día, en orden.</h1>
+    <p class="muted">Entra a tu espacio de clientes y citas.</p>
+    {Astro.url.searchParams.get('error') && (
+      <div class="notice error" role="alert">
+        {Astro.url.searchParams.get('error')}
+      </div>
+    )}
+    <form method="post" action="/api/auth">
+      <input type="hidden" name="csrf" value={Astro.locals.csrf} />
+      <input type="hidden" name="action" value="login" />
+      <label>
+        Correo electrónico
+        <input
+          type="email"
+          name="email"
+          required
+          autocomplete="username"
+          maxlength="254"
+          placeholder="tu@negocio.com"
+        />
+      </label>
+      <label>
+        Contraseña
+        <input
+          type="password"
+          name="password"
+          required
+          autocomplete="current-password"
+          maxlength="128"
+        />
+      </label>
+      <button class="button">
+        Iniciar sesión <Icon name="arrow" size={16} />
+      </button>
+    </form>
+    <p class="auth-foot">
+      ¿Tu negocio aún no tiene cuenta? <a href="/registro">Crear espacio</a>
+    </p>
+    <StudioCredit />
+  </div>
+</Layout>

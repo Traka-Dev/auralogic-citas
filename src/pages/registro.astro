@@ -1,0 +1,92 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Icon from '../components/Icon.astro';
+import Brand from '../components/Brand.astro';
+import StudioCredit from '../components/StudioCredit.astro';
+if (Astro.locals.auth) return Astro.redirect('/');
+const zones = [
+  'America/Mexico_City',
+  'America/Cancun',
+  'America/Tijuana',
+  'America/Bogota',
+  'America/Lima',
+  'America/Santiago',
+  'America/Argentina/Buenos_Aires',
+  'Europe/Madrid',
+  'UTC',
+];
+---
+
+<Layout title="Crear negocio" public>
+  <div class="auth-card">
+    <Brand href="/login" />
+    <h1>Un lugar para tu negocio.</h1>
+    <p class="muted">Organiza las citas y cuida cada relación.</p>
+    {Astro.url.searchParams.get('error') && (
+      <div class="notice error" role="alert">
+        {Astro.url.searchParams.get('error')}
+      </div>
+    )}
+    <form method="post" action="/api/auth">
+      <input type="hidden" name="csrf" value={Astro.locals.csrf} />
+      <input type="hidden" name="action" value="register" />
+      <label>
+        Tu nombre
+        <input
+          name="name"
+          minlength="2"
+          maxlength="100"
+          required
+          autocomplete="name"
+        />
+      </label>
+      <label>
+        Nombre del negocio
+        <input
+          name="business"
+          minlength="2"
+          maxlength="100"
+          required
+          autocomplete="organization"
+        />
+      </label>
+      <label>
+        Correo electrónico
+        <input
+          type="email"
+          name="email"
+          required
+          autocomplete="username"
+          maxlength="254"
+        />
+      </label>
+      <label>
+        Contraseña
+        <input
+          type="password"
+          name="password"
+          required
+          minlength="12"
+          maxlength="128"
+          autocomplete="new-password"
+        />
+        <small>Al menos 12 caracteres. Usa una contraseña única.</small>
+      </label>
+      <label>
+        Zona horaria
+        <select name="timezone">
+          {zones.map((zone) => (
+            <option value={zone}>{zone}</option>
+          ))}
+        </select>
+      </label>
+      <button class="button">
+        Crear mi espacio <Icon name="arrow" size={16} />
+      </button>
+    </form>
+    <p class="auth-foot">
+      ¿Ya tienes cuenta? <a href="/login">Iniciar sesión</a>
+    </p>
+    <StudioCredit />
+  </div>
+</Layout>

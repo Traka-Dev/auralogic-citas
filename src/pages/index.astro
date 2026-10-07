@@ -1,0 +1,221 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Empty from '../components/Empty.astro';
+import Icon from '../components/Icon.astro';
+import Status from '../components/Status.astro';
+import { db } from '../lib/db';
+import { appointments, formatDate, iso, money } from '../lib/crm';
+import { DateTime } from 'luxon';
+import type { Task } from '../lib/types';
+const auth = Astro.locals.auth!;
+const store = db();
+const id = auth.business.id;
+const today = DateTime.now().setZone(auth.business.timezone).startOf('day');
+const items = appointments(store, id, iso(today), iso(today.plus({ days: 1 })));
+const pending = store.get<{ count: number }>(
+  "SELECT COUNT(*) count FROM appointments WHERE business_id=? AND status='pending' AND starts_at>?",
+  id,
+  new Date().toISOString(),
+)!.count;
+const clients = store.get<{ count: number }>(
+  'SELECT COUNT(*) count FROM clients WHERE business_id=? AND archived=0',
+  id,
+)!.count;
+const collected = store.get<{ total: number }>(
+  'SELECT COALESCE(SUM(amount_cents),0) total FROM payments WHERE business_id=? AND created_at>=?',
+  id,
+  iso(today.startOf('month')),
+)!.total;
+const tasks = store.all<Task>(
+  `SELECT t.*,c.name client_name,u.name author_name FROM tasks t JOIN clients c ON t.client_id=c.id JOIN users u ON t.author_id=u.id WHERE t.business_id=? AND t.done=0 ${auth.role === 'agent' ? 'AND t.author_id=?' : ''} ORDER BY t.due_at LIMIT 5`,
+  id,
+  ...(auth.role === 'agent' ? [auth.user.id] : []),
+);
+const serviceCount = store.get<{ count: number }>(
+  'SELECT COUNT(*) count FROM services WHERE business_id=?',
+  id,
+)!.count;
+const staffCount = store.get<{ count: number }>(
+  'SELECT COUNT(*) count FROM availability WHERE business_id=?',
+  id,
+)!.count;
+const booked = store.get<{ count: number }>(
+  'SELECT COUNT(*) count FROM appointments WHERE business_id=?',
+  id,
+)!.count;
+---
+
+<Layout title="Resumen">
+  <PageHeader
+    title={`Hola, ${auth.user.name.split(' ')[0]}.`}
+    subtitle="Así va tu negocio. Cada cita es una oportunidad para conectar."
+    eyebrow="Un buen día empieza aquí"
+  >
+    <a class="button" href="/citas/nueva">
+      <Icon name="plus" size={17} />
+      Nueva cita
+    </a>
+  </PageHeader>
+  <div class="stats">
+    <div class="stat featured">
+      <div class="stat-label">
+        Citas de hoy
+        <Icon name="calendar" size={17} />
+      </div>
+      <span class="stat-value">
+        {items.filter((a) => a.status !== 'cancelled').length}
+      </span>
+      <p class="stat-foot">
+        {items.filter((a) => a.status === 'completed').length} atendidas ·{' '}
+        {items.filter((a) => a.status === 'confirmed').length} confirmadas
+      </p>
+    </div>
+    <div class="stat">
+      <div class="stat-label">
+        Por confirmar
+        <Icon name="clock" size={17} />
+      </div>
+      <span class="stat-value">{pending}</span>
+      <p class="stat-foot">Próximas citas pendientes</p>
+    </div>
+    <div class="stat">
+      <div class="stat-label">
+        Clientes activos
+        <Icon name="clients" size={17} />
+      </div>
+      <span class="stat-value">{clients}</span>
+      <p class="stat-foot">Relaciones que puedes cuidar</p>
+    </div>
+    <div class="stat">
+      <div class="stat-label">
+        Cobros del mes
+        <Icon name="chart" size={17} />
+      </div>
+      <span class="stat-value" style="font-size:25px">
+        {money(collected, auth.business.currency)}
+      </span>
+      <p class="stat-foot">Importes registrados manualmente</p>
+    </div>
+  </div>
+  <div class="welcome-banner">
+    <div>
+      <h2>Más tiempo para hacer lo que te gusta.</h2>
+      <p>
+        Revisa tus citas, confirma los pendientes y prepara la próxima atención.
+      </p>
+    </div>
+    <span class="welcome-art">
+      <Icon name="leaf" size={34} />
+    </span>
+  </div>
+  <div class="grid-2">
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>Tu agenda de hoy</h2>
+          <p>{today.setLocale('es').toFormat("cccc, d 'de' LLLL")}</p>
+        </div>
+        <a href="/agenda" class="text-link">
+          Ver agenda
+          <Icon name="arrow" size={15} />
+        </a>
+      </div>
+      {items.length ? (
+        items.map((a) => (
+          <a class="agenda-row" href={`/citas/${a.id}`}>
+            <div class="agenda-time">
+              {formatDate(a.starts_at, auth.business.timezone, 'HH:mm')}
+              <small>
+                {formatDate(a.ends_at, auth.business.timezone, 'HH:mm')}
+              </small>
+            </div>
+            <span class="service-stripe" style={`background:${a.color}`}></span>
+            <div class="agenda-person">
+              <strong>{a.client_name}</strong>
+              <p>
+                {a.service_name} · {a.staff_name}
+              </p>
+            </div>
+            <Status status={a.status} />
+          </a>
+        ))
+      ) : (
+        <Empty
+          title="Un día con espacio"
+          description="Las citas de hoy aparecerán aquí. Puedes consultar el resto de la semana en la agenda."
+        >
+          <a href="/agenda" class="button secondary small">
+            Explorar agenda
+          </a>
+        </Empty>
+      )}
+    </section>
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>{!booked ? 'Prepara tu espacio' : 'Próximos seguimientos'}</h2>
+          <p>
+            {!booked
+              ? 'Lo esencial para recibir tu primera cita'
+              : 'Pequeñas acciones que hacen la diferencia'}
+          </p>
+        </div>
+      </div>
+      {!booked ? (
+        <>
+          {[
+            [
+              '/servicios',
+              'Configura tus servicios',
+              'Duración y precio',
+              serviceCount > 0,
+            ],
+            [
+              '/equipo',
+              'Organiza al equipo',
+              'Servicios y disponibilidad',
+              staffCount > 0,
+            ],
+            [
+              '/clientes',
+              'Añade tu primer cliente',
+              'Nombre y contacto',
+              clients > 0,
+            ],
+            [
+              '/citas/nueva',
+              'Reserva la primera cita',
+              'Todo listo para empezar',
+              false,
+            ],
+          ].map(([href, label, desc, done], index) => (
+            <a href={String(href)} class="onboarding-step">
+              <span class="step-number">{index + 1}</span>
+              <div>
+                {label}
+                <small>{desc}</small>
+              </div>
+              {done && <Icon name="check" size={17} />}
+            </a>
+          ))}
+        </>
+      ) : tasks.length ? (
+        tasks.map((t) => (
+          <a href={`/clientes/${t.client_id}`} class="note">
+            <h3>{t.title}</h3>
+            <small>
+              {t.client_name} · {formatDate(t.due_at, auth.business.timezone)}
+            </small>
+          </a>
+        ))
+      ) : (
+        <Empty
+          icon="task"
+          title="Todo al día"
+          description="Crea seguimientos desde la ficha de tus clientes para recordar la próxima acción."
+        />
+      )}
+    </section>
+  </div>
+</Layout>

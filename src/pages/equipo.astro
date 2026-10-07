@@ -1,0 +1,280 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Form from '../components/Form.astro';
+import Empty from '../components/Empty.astro';
+import { db } from '../lib/db';
+import type { Staff, Service } from '../lib/types';
+const auth = Astro.locals.auth!;
+const store = db();
+const staff = store.all<Staff>(
+  'SELECT * FROM staff WHERE business_id=? ORDER BY name',
+  auth.business.id,
+);
+const services = store.all<Service>(
+  'SELECT * FROM services WHERE business_id=? AND active=1 ORDER BY name',
+  auth.business.id,
+);
+const eligible = store.all<{ staff_id: string; service_id: string }>(
+  'SELECT * FROM staff_services WHERE business_id=?',
+  auth.business.id,
+);
+const hours = store.all<{
+  staff_id: string;
+  weekday: number;
+  opens: string;
+  closes: string;
+}>('SELECT * FROM availability WHERE business_id=?', auth.business.id);
+const members = store.all<{ name: string; email: string; role: string }>(
+  'SELECT u.name,u.email,m.role FROM users u JOIN memberships m ON u.id=m.user_id WHERE m.business_id=?',
+  auth.business.id,
+);
+const editing = staff.find(
+  (s) => s.id === Astro.url.searchParams.get('editar'),
+);
+const weekdays = [
+  'Lunes',
+  'Martes',
+  'Miércoles',
+  'Jueves',
+  'Viernes',
+  'Sábado',
+  'Domingo',
+];
+const invite = Astro.url.searchParams.get('invitacion');
+const inviteUrl =
+  invite && /^[a-f0-9]{64}$/.test(invite) && auth.role !== 'agent'
+    ? `${process.env.APP_ORIGIN || Astro.url.origin}/invitacion?token=${invite}`
+    : null;
+---
+
+<Layout title="Equipo y horarios">
+  <PageHeader
+    title="Cada persona, su espacio"
+    subtitle="Configura quién presta cada servicio y cuándo está disponible."
+    eyebrow="Equipo y disponibilidad"
+  >
+    {auth.role !== 'agent' && (
+      <a href="#prestador" class="button">
+        + Nuevo prestador
+      </a>
+    )}
+  </PageHeader>
+  {staff.length ? (
+    <div class="equal-grid">
+      {staff.map((person) => (
+        <section class="panel staff-card">
+          <div class="staff-heading">
+            <span class="staff-dot" style={`background:${person.color}`}>
+              {person.name.slice(0, 1)}
+            </span>
+            <div>
+              <h2>{person.name}</h2>
+              <p class="muted" style="font-size:11px">
+                {eligible
+                  .filter((e) => e.staff_id === person.id)
+                  .map((e) => services.find((s) => s.id === e.service_id)?.name)
+                  .filter(Boolean)
+                  .join(' · ') || 'Sin servicios habilitados'}
+              </p>
+            </div>
+            {auth.role !== 'agent' && (
+              <a
+                class="text-link"
+                href={`/equipo?editar=${person.id}#prestador`}
+                style="margin-left:auto"
+              >
+                Editar
+              </a>
+            )}
+          </div>
+          {weekdays.map((day, index) => {
+            const slot = hours.find(
+              (h) => h.staff_id === person.id && h.weekday === index + 1,
+            );
+            return (
+              <div class="hours-row">
+                <strong>{day}</strong>
+                <span>
+                  {slot ? `${slot.opens} — ${slot.closes}` : 'No disponible'}
+                </span>
+              </div>
+            );
+          })}
+        </section>
+      ))}
+    </div>
+  ) : (
+    <section class="panel">
+      <Empty
+        icon="clients"
+        title="Tu equipo empieza aquí"
+        description="Añade a quienes prestan los servicios. Tener agenda no implica tener acceso al CRM."
+      />
+    </section>
+  )}
+  {auth.role !== 'agent' && (
+    <>
+      <div class="equal-grid section-gap">
+        <section id="prestador" class="panel padded">
+          <h2>{editing ? 'Editar prestador' : 'Nuevo prestador'}</h2>
+          <Form action="staff" class="form-stack section-gap">
+            {editing && <input type="hidden" name="id" value={editing.id} />}
+            <label>
+              Nombre
+              <input
+                name="name"
+                maxlength="100"
+                required
+                value={editing?.name}
+              />
+            </label>
+            <label>
+              Color de agenda
+              <input
+                type="color"
+                name="color"
+                value={editing?.color || '#367a68'}
+              />
+            </label>
+            <fieldset style="border:0;padding:0;margin:0">
+              <legend style="font-size:12px;margin-bottom:12px">
+                Servicios habilitados
+              </legend>
+              <div class="checks">
+                {services.map((service) => (
+                  <label class="checkbox-label">
+                    <input
+                      type="checkbox"
+                      name="services"
+                      value={service.id}
+                      checked={
+                        editing
+                          ? eligible.some(
+                              (e) =>
+                                e.staff_id === editing.id &&
+                                e.service_id === service.id,
+                            )
+                          : true
+                      }
+                    />
+                    {service.name}
+                  </label>
+                ))}
+              </div>
+              {!services.length && (
+                <p class="muted">Crea un servicio antes de habilitarlo.</p>
+              )}
+            </fieldset>
+            <button class="button">Guardar prestador</button>
+          </Form>
+        </section>
+        <section class="panel padded">
+          <h2>Disponibilidad semanal</h2>
+          <p class="muted" style="margin-top:8px">
+            Cada día puede tener un horario. Usa bloqueos en la agenda para
+            descansos o excepciones.
+          </p>
+          <Form action="availability" class="form-grid section-gap">
+            <label>
+              Prestador
+              <select name="staff_id" required>
+                {staff.map((s) => (
+                  <option value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Día
+              <select name="weekday">
+                {weekdays.map((d, i) => (
+                  <option value={i + 1}>{d}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Apertura
+              <input type="time" name="opens" value="09:00" required />
+            </label>
+            <label>
+              Cierre
+              <input type="time" name="closes" value="18:00" required />
+            </label>
+            <label class="checkbox-label span-2">
+              <input type="checkbox" name="closed" value="yes" />
+              Marcar ese día como no disponible
+            </label>
+            <button class="button secondary span-2" disabled={!staff.length}>
+              Guardar horario
+            </button>
+          </Form>
+        </section>
+      </div>
+      <section class="panel section-gap">
+        <div class="panel-heading">
+          <h2>Usuarios del CRM</h2>
+          <span class="badge">Acceso al negocio</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Correo</th>
+                <th>Rol</th>
+              </tr>
+            </thead>
+            <tbody>
+              {members.map((m) => (
+                <tr>
+                  <td>{m.name}</td>
+                  <td>{m.email}</td>
+                  <td>
+                    {m.role === 'owner'
+                      ? 'Propietario'
+                      : m.role === 'admin'
+                        ? 'Administrador'
+                        : 'Agente'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style="padding:24px">
+          {inviteUrl && (
+            <div class="notice">
+              <p>
+                Comparte este enlace con la persona invitada. Expira en 48
+                horas.
+              </p>
+              <input
+                value={inviteUrl}
+                readonly
+                aria-label="Enlace de invitación"
+              />
+            </div>
+          )}
+          <Form action="invite" class="form-grid">
+            <label>
+              Correo de la persona
+              <input type="email" name="email" required maxlength="254" />
+            </label>
+            <label>
+              Permiso
+              <select name="role">
+                <option value="agent">Agente · atención y reservas</option>
+                <option value="admin">
+                  Administrador · operación y configuración
+                </option>
+              </select>
+            </label>
+            <button class="button secondary span-2">
+              Crear enlace de invitación
+            </button>
+          </Form>
+        </div>
+      </section>
+    </>
+  )}
+</Layout>

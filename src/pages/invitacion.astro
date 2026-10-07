@@ -1,0 +1,68 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Brand from '../components/Brand.astro';
+import StudioCredit from '../components/StudioCredit.astro';
+import { db } from '../lib/db';
+import { digest, now } from '../lib/auth';
+const value = Astro.url.searchParams.get('token') || '';
+const invite = db().get<{ email: string; name: string }>(
+  'SELECT i.email,b.name FROM invites i JOIN businesses b ON i.business_id=b.id WHERE i.token_hash=? AND i.used_at IS NULL AND i.expires_at>?',
+  digest(value),
+  now(),
+);
+---
+
+<Layout title="Unirte al equipo" public>
+  <div class="auth-card">
+    <Brand href="/login" />
+    {Astro.url.searchParams.get('error') && (
+      <div class="notice error" role="alert">
+        {Astro.url.searchParams.get('error')}
+      </div>
+    )}
+    {invite ? (
+      <>
+        <p class="eyebrow">Invitación al equipo</p>
+        <h1>Únete a {invite.name}</h1>
+        <p class="muted">Si ya tienes una cuenta, usa tu contraseña actual.</p>
+        <form method="post" action="/api/auth">
+          <input type="hidden" name="csrf" value={Astro.locals.csrf} />
+          <input type="hidden" name="action" value="invite" />
+          <input type="hidden" name="token" value={value} />
+          <label>
+            Nombre
+            <input name="name" required maxlength="100" autocomplete="name" />
+          </label>
+          <label>
+            Correo
+            <input name="email" type="email" value={invite.email} readonly />
+          </label>
+          <label>
+            Contraseña
+            <input
+              name="password"
+              type="password"
+              required
+              minlength="12"
+              maxlength="128"
+              autocomplete="current-password"
+            />
+          </label>
+          <button class="button">Aceptar invitación</button>
+        </form>
+      </>
+    ) : (
+      <>
+        <h1>Invitación no disponible</h1>
+        <p class="muted">
+          Puede haber expirado o ya fue utilizada. Solicita un nuevo enlace al
+          administrador.
+        </p>
+        <a class="button" href="/login">
+          Ir a inicio de sesión
+        </a>
+      </>
+    )}
+    <StudioCredit />
+  </div>
+</Layout>

@@ -1,0 +1,42 @@
+---
+interface Props {
+  name: string;
+  size?: number;
+}
+const { name, size = 20 } = Astro.props;
+const paths: Record<string, string> = {
+  home: 'M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z',
+  calendar:
+    'M8 2v4m8-4v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z',
+  chat: 'M21 11.5a8.5 8.5 0 0 1-8.5 8.5H3l2.5-4A8.5 8.5 0 1 1 21 11.5ZM8 10h8m-8 4h5',
+  clients:
+    'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7-7a4 4 0 0 1 0 7.75',
+  scissors:
+    'M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm0 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm2-13 13 13M8 16 21 3',
+  task: 'm8 12 3 3 5-6M7 3h10a2 2 0 0 1 2 2v15H5V5a2 2 0 0 1 2-2Z',
+  chart: 'M3 3v18h18M7 16v-5m5 5V7m5 9V3',
+  settings:
+    'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM3 12h2m14 0h2M12 3v2m0 14v2M5.6 5.6 7 7m10 10 1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4',
+  plus: 'M12 5v14M5 12h14',
+  arrow: 'M5 12h14m-5-5 5 5-5 5',
+  clock: 'M12 7v5l3 2M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z',
+  search: 'm21 21-5-5M10 17a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z',
+  check: 'm5 12 4 4L19 6',
+  logout: 'M9 21H4V3h5m5 4 5 5-5 5m-7-5h12',
+  leaf: 'M20 3c-9-1-17 3-16 11 1 7 13 8 16-11ZM5 19l9-9',
+};
+---
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.7"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  aria-hidden="true"
+>
+  <path d={paths[name] || paths.calendar} />
+</svg>

@@ -1,0 +1,18 @@
+---
+import { brand } from '../config/brand';
+interface Props {
+  href?: string;
+}
+const { href = '/' } = Astro.props;
+---
+
+<a href={href} class="brand" aria-label={brand.product}>
+  <img src="/favicon.svg" width="38" height="38" alt="" class="brand-mark" />
+  <span class="brand-text">
+    <span>
+      {brand.name}
+      <span class="brand-period">.</span>
+    </span>
+    <small>CITAS / OPEN SOURCE</small>
+  </span>
+</a>

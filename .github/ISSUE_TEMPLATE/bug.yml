@@ -1,0 +1,24 @@
+name: Reportar un error
+description: Describe un problema reproducible con datos ficticios.
+labels: [bug]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Qué sucede y qué esperabas
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Pasos para reproducir
+      description: No incluyas datos reales de clientes, QR ni credenciales.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Entorno
+      placeholder: Versión, sistema operativo, Node y navegador.
+    validations:
+      required: true

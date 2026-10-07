@@ -1,0 +1,20 @@
+---
+import { randomUUID } from 'node:crypto';
+interface Props {
+  action: string;
+  back?: string;
+  class?: string;
+}
+const {
+  action,
+  back = Astro.url.pathname + Astro.url.search,
+  class: className,
+} = Astro.props;
+---
+
+<form method="post" action={`/api/actions/${action}`} class={className}>
+  <input type="hidden" name="csrf" value={Astro.locals.csrf} />
+  <input type="hidden" name="request_id" value={randomUUID()} />
+  <input type="hidden" name="back" value={back} />
+  <slot />
+</form>

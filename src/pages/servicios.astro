@@ -1,0 +1,135 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Form from '../components/Form.astro';
+import Empty from '../components/Empty.astro';
+import { db } from '../lib/db';
+import { money } from '../lib/crm';
+import type { Service } from '../lib/types';
+const auth = Astro.locals.auth!;
+const services = db().all<Service>(
+  'SELECT * FROM services WHERE business_id=? ORDER BY name',
+  auth.business.id,
+);
+const editing = services.find(
+  (s) => s.id === Astro.url.searchParams.get('editar'),
+);
+---
+
+<Layout title="Servicios">
+  <PageHeader
+    title="Lo que haces mejor"
+    subtitle="Define la duración, el precio y el tiempo que necesitas entre visitas."
+    eyebrow="Catálogo de servicios"
+  >
+    {auth.role !== 'agent' && (
+      <a href="#servicio" class="button">
+        + Nuevo servicio
+      </a>
+    )}
+  </PageHeader>
+  <section class="panel">
+    {services.length ? (
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Servicio</th>
+              <th>Duración</th>
+              <th>Entre citas</th>
+              <th>Precio</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {services.map((s) => (
+              <tr>
+                <td>
+                  <strong>{s.name}</strong>
+                </td>
+                <td>{s.duration} min</td>
+                <td>{s.buffer} min</td>
+                <td>{money(s.price_cents, auth.business.currency)}</td>
+                <td>
+                  {auth.role !== 'agent' && (
+                    <a
+                      class="text-link"
+                      href={`/servicios?editar=${s.id}#servicio`}
+                    >
+                      Editar
+                    </a>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <Empty
+        icon="scissors"
+        title="Empieza con tu servicio principal"
+        description="Cada servicio tendrá una duración y prestadores habilitados para atenderlo."
+      />
+    )}
+  </section>
+  {auth.role !== 'agent' && (
+    <section id="servicio" class="panel padded section-gap">
+      <h2>{editing ? 'Editar servicio' : 'Crear servicio'}</h2>
+      <Form action="service" class="form-grid section-gap">
+        {editing && <input type="hidden" name="id" value={editing.id} />}
+        <label>
+          Nombre
+          <input
+            name="name"
+            required
+            maxlength="100"
+            value={editing?.name}
+            placeholder="Corte de cabello"
+          />
+        </label>
+        <label>
+          Precio · {auth.business.currency}
+          <input
+            type="number"
+            name="price"
+            min="0"
+            max="9999999"
+            step="0.01"
+            required
+            value={editing ? (editing.price_cents / 100).toFixed(2) : undefined}
+          />
+        </label>
+        <label>
+          Duración · minutos
+          <input
+            type="number"
+            name="duration"
+            min="5"
+            max="480"
+            required
+            value={editing?.duration || 30}
+          />
+        </label>
+        <label>
+          Tiempo entre citas · minutos
+          <input
+            type="number"
+            name="buffer"
+            min="0"
+            max="120"
+            required
+            value={editing?.buffer || 0}
+          />
+          <small>Se reserva también para limpieza o preparación.</small>
+        </label>
+        <div class="span-2 form-footer">
+          <span class="muted">
+            Habilita el servicio para cada prestador en Equipo y horarios.
+          </span>
+          <button class="button">Guardar servicio</button>
+        </div>
+      </Form>
+    </section>
+  )}
+</Layout>

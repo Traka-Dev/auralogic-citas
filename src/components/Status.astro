@@ -1,0 +1,13 @@
+---
+import { statusLabels } from '../lib/crm';
+import type { AppointmentStatus } from '../lib/types';
+interface Props {
+  status: AppointmentStatus;
+}
+const { status } = Astro.props;
+---
+
+<span class={`badge status-${status}`}>
+  <span class="dot"></span>
+  {statusLabels[status]}
+</span>

@@ -1,0 +1,181 @@
+---
+import '../styles/global.css';
+import Icon from '../components/Icon.astro';
+import Form from '../components/Form.astro';
+import Brand from '../components/Brand.astro';
+import StudioCredit from '../components/StudioCredit.astro';
+import { brand } from '../config/brand';
+import { db } from '../lib/db';
+import { DateTime } from 'luxon';
+interface Props {
+  title: string;
+  public?: boolean;
+}
+const { title, public: isPublic = false } = Astro.props;
+const auth = Astro.locals.auth;
+const nav = [
+  ['/', 'home', 'Resumen'],
+  ['/agenda', 'calendar', 'Agenda'],
+  ['/whatsapp', 'chat', 'WhatsApp'],
+  ['/clientes', 'clients', 'Clientes'],
+  ['/servicios', 'scissors', 'Servicios'],
+  ['/equipo', 'clients', 'Equipo y horarios'],
+  ['/tareas', 'task', 'Seguimientos'],
+  ['/reportes', 'chart', 'Reportes'],
+];
+const memberships = auth
+  ? db().all<{ id: string; name: string }>(
+      'SELECT b.id,b.name FROM businesses b JOIN memberships m ON b.id=m.business_id WHERE m.user_id=? ORDER BY b.name',
+      auth.user.id,
+    )
+  : [];
+const initial = auth?.user.name.slice(0, 1).toUpperCase();
+const day = DateTime.now()
+  .setZone(auth?.business.timezone || 'America/Mexico_City')
+  .setLocale('es')
+  .toFormat("cccc, d 'de' LLLL");
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta
+      name="description"
+      content={`${brand.product}: ${brand.description}`}
+    />
+    <title>{title} · {brand.product}</title>
+    <meta name="application-name" content={brand.product} />
+    <meta name="author" content={brand.name} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip-link" href="#contenido">
+      Saltar al contenido
+    </a>
+    {isPublic ? (
+      <main id="contenido" class="auth-shell">
+        <slot />
+      </main>
+    ) : (
+      <div class="app-shell">
+        <aside class="sidebar" aria-label="Navegación principal">
+          <Brand />
+          <div class="workspace-label">TU ESPACIO DE TRABAJO</div>
+          <div class="business-card">
+            <span class="business-icon">
+              {auth?.business.name.slice(0, 1).toUpperCase()}
+            </span>
+            <div>
+              <strong>{auth?.business.name}</strong>
+              <small>Agenda y relaciones</small>
+            </div>
+          </div>
+          {memberships.length > 1 && (
+            <Form action="switch-business" class="workspace-switch">
+              <label>
+                Negocio activo
+                <select name="business_id" aria-label="Negocio activo">
+                  {memberships.map((m) => (
+                    <option value={m.id} selected={m.id === auth?.business.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button class="button small secondary">Cambiar</button>
+            </Form>
+          )}
+          <nav>
+            {nav.map(([href, icon, label]) => (
+              <a
+                href={href}
+                class:list={[
+                  'nav-link',
+                  {
+                    active:
+                      href === '/'
+                        ? Astro.url.pathname === '/'
+                        : Astro.url.pathname.startsWith(href!),
+                  },
+                ]}
+                aria-current={
+                  (
+                    href === '/'
+                      ? Astro.url.pathname === '/'
+                      : Astro.url.pathname.startsWith(href!)
+                  )
+                    ? 'page'
+                    : undefined
+                }
+              >
+                <Icon name={icon!} />
+                <span>{label}</span>
+              </a>
+            ))}
+          </nav>
+          <div class="sidebar-bottom">
+            <a
+              class="open-source"
+              href={brand.repository}
+              target="_blank"
+              rel="noopener"
+            >
+              <span class="dot"></span>Open source · Ver código ↗
+            </a>
+            <div class="user-card">
+              <span class="avatar">{initial}</span>
+              <div>
+                <strong>{auth?.user.name}</strong>
+                <small>
+                  {auth?.role === 'owner'
+                    ? 'Propietario'
+                    : auth?.role === 'admin'
+                      ? 'Administrador'
+                      : 'Agente'}
+                </small>
+              </div>
+              <form method="post" action="/api/auth">
+                <input type="hidden" name="csrf" value={Astro.locals.csrf} />
+                <input type="hidden" name="action" value="logout" />
+                <button class="icon-button" aria-label="Cerrar sesión">
+                  <Icon name="logout" size={18} />
+                </button>
+              </form>
+            </div>
+          </div>
+        </aside>
+        <div class="main-shell">
+          <div class="topbar">
+            <span class="topbar-label">Menos pendientes. Más conexiones.</span>
+            <span class="topbar-date">
+              <Icon name="calendar" size={16} />
+              {day}
+            </span>
+          </div>
+          <main id="contenido" class="content">
+            {Astro.url.searchParams.get('error') && (
+              <div class="notice error" role="alert">
+                {Astro.url.searchParams.get('error')}
+              </div>
+            )}
+            {Astro.url.searchParams.get('ok') && (
+              <div class="notice success" role="status">
+                {Astro.url.searchParams.get('ok')}
+              </div>
+            )}
+            <slot />
+          </main>
+          <footer class="app-footer">
+            <StudioCredit />
+            <a href={brand.repository} target="_blank" rel="noopener">
+              {brand.product} · AGPL-3.0 ↗
+            </a>
+          </footer>
+        </div>
+      </div>
+    )}
+  </body>
+</html>

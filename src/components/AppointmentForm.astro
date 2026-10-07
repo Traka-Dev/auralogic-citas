@@ -1,0 +1,148 @@
+---
+import { db } from '../lib/db';
+import { DateTime } from 'luxon';
+import type { Appointment, Client, Staff, Service } from '../lib/types';
+import { money } from '../lib/crm';
+import Form from './Form.astro';
+interface Props {
+  appointment?: Appointment;
+  clientId?: string;
+}
+const { appointment, clientId } = Astro.props;
+const auth = Astro.locals.auth!;
+const store = db();
+const clients = store.all<Client>(
+  'SELECT * FROM clients WHERE business_id=? AND archived=0 ORDER BY name',
+  auth.business.id,
+);
+const services = store.all<Service>(
+  'SELECT * FROM services WHERE business_id=? AND active=1 ORDER BY name',
+  auth.business.id,
+);
+const staff = store.all<Staff>(
+  'SELECT * FROM staff WHERE business_id=? AND active=1 ORDER BY name',
+  auth.business.id,
+);
+const eligible = store.all<{ staff_id: string; service_id: string }>(
+  'SELECT staff_id,service_id FROM staff_services WHERE business_id=?',
+  auth.business.id,
+);
+const start = appointment
+  ? DateTime.fromISO(appointment.starts_at)
+      .setZone(auth.business.timezone)
+      .toFormat("yyyy-MM-dd'T'HH:mm")
+  : Astro.url.searchParams.get('fecha')
+    ? `${Astro.url.searchParams.get('fecha')}T09:00`
+    : DateTime.now()
+        .setZone(auth.business.timezone)
+        .plus({ days: 1 })
+        .toFormat("yyyy-MM-dd'T'09:00");
+---
+
+{!clients.length || !services.length || !staff.length ? (
+  <div class="notice">
+    <p>
+      Para reservar necesitas un cliente, un servicio y un prestador con
+      horario.
+    </p>
+    <div class="inline-actions">
+      <a href="/clientes" class="button secondary">
+        Clientes
+      </a>
+      <a href="/servicios" class="button secondary">
+        Servicios
+      </a>
+      <a href="/equipo" class="button secondary">
+        Equipo y horarios
+      </a>
+    </div>
+  </div>
+) : (
+  <Form action="appointment" class="form-grid booking-form">
+    {appointment && <input type="hidden" name="id" value={appointment.id} />}
+    <label>
+      Cliente
+      <select name="client_id" required>
+        {clients.map((c) => (
+          <option
+            value={c.id}
+            selected={c.id === (appointment?.client_id || clientId)}
+          >
+            {c.name} · {c.phone || 'WhatsApp'}
+          </option>
+        ))}
+      </select>
+    </label>
+    <label>
+      Servicio
+      <select name="service_id" required data-service>
+        {services.map((s) => (
+          <option value={s.id} selected={s.id === appointment?.service_id}>
+            {s.name} · {s.duration} min ·{' '}
+            {money(s.price_cents, auth.business.currency)}
+          </option>
+        ))}
+      </select>
+    </label>
+    <label>
+      Quién atiende
+      <select name="staff_id" required data-staff>
+        {staff.map((p) => (
+          <option
+            value={p.id}
+            selected={p.id === appointment?.staff_id}
+            data-services={eligible
+              .filter((e) => e.staff_id === p.id)
+              .map((e) => e.service_id)
+              .join(',')}
+          >
+            {p.name}
+          </option>
+        ))}
+      </select>
+    </label>
+    <label>
+      Fecha y hora
+      <input type="datetime-local" name="starts_at" value={start} required />
+      <small>Horario de {auth.business.timezone}. Se valida al reservar.</small>
+    </label>
+    <label class="span-2">
+      Nota de la cita
+      <textarea
+        name="notes"
+        rows="3"
+        maxlength="1000"
+        placeholder="Detalles para preparar la atención…"
+      >{appointment?.notes || ''}</textarea>
+    </label>
+    <div class="span-2 form-footer">
+      <p class="muted">
+        La reserva queda pendiente de confirmar con el cliente.
+      </p>
+      <button class="button">
+        {appointment ? 'Guardar reprogramación' : 'Reservar cita'}
+      </button>
+    </div>
+  </Form>
+)}
+<script>
+  document
+    .querySelectorAll<HTMLFormElement>('.booking-form')
+    .forEach((form) => {
+      const services = form.querySelector<HTMLSelectElement>('[data-service]');
+      const staff = form.querySelector<HTMLSelectElement>('[data-staff]');
+      if (!services || !staff) return;
+      const sync = () => {
+        [...staff.options].forEach((option) => {
+          option.disabled = !option.dataset.services
+            ?.split(',')
+            .includes(services.value);
+        });
+        if (staff.selectedOptions[0]?.disabled)
+          staff.value =
+            [...staff.options].find((option) => !option.disabled)?.value || '';
+      };
+      services.addEventListener('change', sync);
+      sync();
+    });
+</script>

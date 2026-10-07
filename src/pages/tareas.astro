@@ -1,0 +1,89 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Empty from '../components/Empty.astro';
+import Form from '../components/Form.astro';
+import { db } from '../lib/db';
+import { formatDate } from '../lib/crm';
+import type { Task } from '../lib/types';
+const auth = Astro.locals.auth!;
+const completed = Astro.url.searchParams.get('estado') === 'completados';
+const tasks = db().all<Task>(
+  `SELECT t.*,c.name client_name,u.name author_name FROM tasks t JOIN clients c ON t.client_id=c.id JOIN users u ON t.author_id=u.id WHERE t.business_id=? AND t.done=? ${auth.role === 'agent' ? 'AND t.author_id=?' : ''} ORDER BY t.due_at`,
+  auth.business.id,
+  completed ? 1 : 0,
+  ...(auth.role === 'agent' ? [auth.user.id] : []),
+);
+---
+
+<Layout title="Seguimientos">
+  <PageHeader
+    title="Que ninguna visita quede en el olvido"
+    subtitle="Recordatorios internos para retomar consultas y cuidar a tus clientes."
+    eyebrow="Próximas acciones"
+  >
+    <a class="button secondary" href="/clientes">
+      Crear desde un cliente
+    </a>
+  </PageHeader>
+  <div class="toolbar">
+    <div class="filter-tabs">
+      <a href="/tareas" class:list={{ selected: !completed }}>
+        Pendientes
+      </a>
+      <a href="/tareas?estado=completados" class:list={{ selected: completed }}>
+        Completados
+      </a>
+    </div>
+  </div>
+  <section class="panel">
+    {tasks.length ? (
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Acción</th>
+              <th>Cliente</th>
+              <th>Responsable</th>
+              <th>Fecha</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {tasks.map((task) => (
+              <tr>
+                <td>
+                  <strong>{task.title}</strong>
+                  {!completed && task.due_at < new Date().toISOString() && (
+                    <small style="color:#b57844">Vencido</small>
+                  )}
+                </td>
+                <td>
+                  <a class="text-link" href={`/clientes/${task.client_id}`}>
+                    {task.client_name}
+                  </a>
+                </td>
+                <td>{task.author_name}</td>
+                <td>{formatDate(task.due_at, auth.business.timezone)}</td>
+                <td>
+                  {!completed && (
+                    <Form action="task-done">
+                      <input type="hidden" name="id" value={task.id} />
+                      <button class="button secondary small">Completar</button>
+                    </Form>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <Empty
+        icon="task"
+        title="Todo en orden"
+        description="Puedes crear una próxima acción desde la ficha de cualquier cliente."
+      />
+    )}
+  </section>
+</Layout>

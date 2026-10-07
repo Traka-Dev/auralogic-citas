@@ -1,0 +1,178 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import Status from '../../components/Status.astro';
+import Form from '../../components/Form.astro';
+import AppointmentForm from '../../components/AppointmentForm.astro';
+import { db } from '../../lib/db';
+import { appointments, formatDate, money } from '../../lib/crm';
+const auth = Astro.locals.auth!;
+const store = db();
+const appointment = appointments(store, auth.business.id).find(
+  (a) => a.id === Astro.params.id,
+);
+if (!appointment) return Astro.redirect('/agenda?error=Cita%20no%20disponible');
+const events = store.all<{
+  description: string;
+  created_at: string;
+  name: string;
+}>(
+  'SELECT e.*,u.name FROM appointment_events e JOIN users u ON e.author_id=u.id WHERE e.appointment_id=? AND e.business_id=? ORDER BY e.created_at DESC',
+  appointment.id,
+  auth.business.id,
+);
+const payments = store.all<{ amount_cents: number; created_at: string }>(
+  'SELECT * FROM payments WHERE appointment_id=? AND business_id=? ORDER BY created_at DESC',
+  appointment.id,
+  auth.business.id,
+);
+const active = ['pending', 'confirmed'].includes(appointment.status);
+const started = appointment.starts_at <= new Date().toISOString();
+---
+
+<Layout title={`Cita de ${appointment.client_name}`}>
+  <PageHeader
+    title={appointment.client_name}
+    subtitle={`${appointment.service_name} · ${formatDate(appointment.starts_at, auth.business.timezone, 'cccc d LLL, HH:mm')}`}
+    eyebrow="Detalle de cita"
+  >
+    <a href="/agenda" class="button secondary">
+      Volver
+    </a>
+    <a href={`/clientes/${appointment.client_id}`} class="button secondary">
+      Ver cliente
+    </a>
+  </PageHeader>
+  <div class="grid-2">
+    <div class="stack">
+      <section class="panel padded">
+        <div
+          class="inline-actions"
+          style="justify-content:space-between;margin-bottom:24px"
+        >
+          <h2>Todo para esta visita</h2>
+          <Status status={appointment.status} />
+        </div>
+        <dl class="detail-list">
+          <div>
+            <dt>Servicio</dt>
+            <dd>{appointment.service_name}</dd>
+          </div>
+          <div>
+            <dt>Quién atiende</dt>
+            <dd>{appointment.staff_name}</dd>
+          </div>
+          <div>
+            <dt>Horario</dt>
+            <dd>
+              {formatDate(appointment.starts_at, auth.business.timezone)} —{' '}
+              {formatDate(appointment.ends_at, auth.business.timezone, 'HH:mm')}
+            </dd>
+          </div>
+          <div>
+            <dt>Precio acordado</dt>
+            <dd>{money(appointment.price_cents, auth.business.currency)}</dd>
+          </div>
+          <div>
+            <dt>Nota</dt>
+            <dd>{appointment.notes || 'Sin notas para esta cita.'}</dd>
+          </div>
+        </dl>
+        {active && (
+          <div class="inline-actions section-gap">
+            {[
+              ...(appointment.status === 'pending' ? ['confirmed'] : []),
+              ...(started ? ['completed', 'no_show'] : []),
+              'cancelled',
+            ].map((status) => (
+              <Form action="status">
+                <input type="hidden" name="id" value={appointment.id} />
+                <input type="hidden" name="status" value={status} />
+                <button
+                  class:list={[
+                    'button',
+                    'small',
+                    status === 'cancelled'
+                      ? 'danger'
+                      : status === 'no_show'
+                        ? 'secondary'
+                        : '',
+                  ]}
+                >
+                  {status === 'confirmed'
+                    ? 'Confirmar cita'
+                    : status === 'completed'
+                      ? 'Marcar atendida'
+                      : status === 'no_show'
+                        ? 'No asistió'
+                        : 'Cancelar cita'}
+                </button>
+              </Form>
+            ))}
+          </div>
+        )}
+      </section>
+      {active && (
+        <section class="panel padded">
+          <h2>Reprogramar cita</h2>
+          <p class="muted" style="margin:8px 0 24px">
+            El nuevo horario se comprueba antes de liberar el anterior.
+          </p>
+          <AppointmentForm appointment={appointment} />
+        </section>
+      )}
+    </div>
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Historial de cambios</h2>
+        </div>
+        {events.map((event) => (
+          <div class="note">
+            <p>{event.description}</p>
+            <small>
+              {event.name} ·{' '}
+              {formatDate(event.created_at, auth.business.timezone)}
+            </small>
+          </div>
+        ))}
+      </section>
+      <section class="panel padded">
+        <h2>Cobros registrados</h2>
+        <p class="muted" style="margin-top:8px">
+          {money(
+            payments.reduce((sum, p) => sum + p.amount_cents, 0),
+            auth.business.currency,
+          )}{' '}
+          registrados
+        </p>
+        {payments.map((p) => (
+          <div class="hours-row">
+            <strong>{money(p.amount_cents, auth.business.currency)}</strong>
+            <span>{formatDate(p.created_at, auth.business.timezone)}</span>
+          </div>
+        ))}
+        {auth.role !== 'agent' && appointment.status !== 'cancelled' && (
+          <Form action="payment" class="form-stack section-gap">
+            <input type="hidden" name="appointment_id" value={appointment.id} />
+            <label>
+              Importe recibido
+              <input
+                type="number"
+                name="amount"
+                min="0.01"
+                max="9999999"
+                step="0.01"
+                required
+              />
+            </label>
+            <button class="button secondary">Registrar cobro</button>
+          </Form>
+        )}
+        <p class="payment-note">
+          Registro manual. No procesa pagos ni confirma transacciones bancarias.
+        </p>
+      </section>
+    </div>
+  </div>
+</Layout>

@@ -1,0 +1,326 @@
+---
+import Layout from '../layouts/Layout.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Form from '../components/Form.astro';
+import Empty from '../components/Empty.astro';
+import Icon from '../components/Icon.astro';
+import { db } from '../lib/db';
+import { formatDate } from '../lib/crm';
+import type { Conversation, Message } from '../lib/types';
+import { whatsappEnabled } from '../lib/whatsapp/crypto';
+const auth = Astro.locals.auth!;
+const store = db();
+const conversations = store.all<Conversation>(
+  'SELECT c.*,p.name client_name FROM conversations c JOIN clients p ON c.client_id=p.id WHERE c.business_id=? ORDER BY c.updated_at DESC LIMIT 100',
+  auth.business.id,
+);
+const selected =
+  conversations.find(
+    (c) => c.id === Astro.url.searchParams.get('conversacion'),
+  ) || conversations[0];
+const messages = selected
+  ? store
+      .all<Message>(
+        'SELECT * FROM messages WHERE business_id=? AND conversation_id=? ORDER BY created_at DESC LIMIT 100',
+        auth.business.id,
+        selected.id,
+      )
+      .reverse()
+  : [];
+const connection = store.get<{
+  status: string;
+  heartbeat_at: string | null;
+  desired: number;
+}>('SELECT * FROM connections WHERE business_id=?', auth.business.id);
+const alive =
+  !!connection?.heartbeat_at &&
+  Date.parse(connection.heartbeat_at) > Date.now() - 30000;
+const enabled = whatsappEnabled();
+const members = store.all<{ id: string; name: string }>(
+  'SELECT u.id,u.name FROM users u JOIN memberships m ON u.id=m.user_id WHERE m.business_id=?',
+  auth.business.id,
+);
+const stateLabels: Record<string, string> = {
+  connected: 'Conectado',
+  disconnected: 'Desconectado',
+  connecting: 'Conectando…',
+  qr: 'Escanea el QR',
+  reconnecting: 'Reconectando…',
+  offline: 'Worker no disponible',
+};
+const messageLabels: Record<string, string> = {
+  queued: 'En cola',
+  sending: 'Enviando',
+  sent: 'Enviado',
+  delivered: 'Entregado',
+  read: 'Leído',
+  received: 'Recibido',
+  cancelled: 'Envío cancelado',
+  uncertain: 'Envío sin confirmar · revisa WhatsApp antes de repetir',
+};
+---
+
+<Layout title="WhatsApp">
+  <PageHeader
+    title="Cada conversación, una conexión"
+    subtitle="Atiende consultas y lleva a tus clientes de la conversación a la cita."
+    eyebrow="Bandeja compartida"
+  />
+  <section class="panel connection">
+    <div>
+      <h2 class="connection-state">
+        <span class="dot"></span>
+        <span data-connection>
+          {stateLabels[alive ? connection!.status : 'offline']}
+        </span>
+      </h2>
+      <p>
+        {enabled
+          ? 'Conector experimental de WhatsApp Web · mensajes de texto'
+          : 'La integración está desactivada. Consulta la guía de instalación para habilitar el worker.'}
+      </p>
+    </div>
+    {auth.role !== 'agent' && (
+      <div class="inline-actions">
+        <Form action="whatsapp-connect">
+          <button class="button secondary" disabled={!enabled}>
+            Conectar por QR
+          </button>
+        </Form>
+        <Form action="whatsapp-disconnect">
+          <button class="button secondary" disabled={!connection?.desired}>
+            Desvincular
+          </button>
+        </Form>
+      </div>
+    )}
+  </section>
+  <div data-qr-panel hidden class="notice">
+    <p>
+      Abre WhatsApp en tu teléfono → Dispositivos vinculados → Vincular un
+      dispositivo.
+    </p>
+    <img
+      class="qr-image"
+      data-qr
+      alt="Código QR para vincular WhatsApp"
+      width="240"
+      height="240"
+    />
+    <p>
+      El QR caduca y se actualiza automáticamente. Solo administradores pueden
+      verlo.
+    </p>
+  </div>
+  <section class="panel">
+    <div class="chat-grid">
+      <aside class="chat-list" aria-label="Conversaciones">
+        {conversations.length ? (
+          conversations.map((c) => (
+            <a
+              href={`/whatsapp?conversacion=${c.id}`}
+              class:list={{ selected: c.id === selected?.id }}
+            >
+              <strong>{c.client_name}</strong>
+              <small>{formatDate(c.updated_at, auth.business.timezone)}</small>
+              <small>
+                {c.assigned_to
+                  ? `Atiende ${members.find((m) => m.id === c.assigned_to)?.name || 'el equipo'}`
+                  : 'Sin asignar'}
+              </small>
+            </a>
+          ))
+        ) : (
+          <Empty
+            icon="chat"
+            title="Tu bandeja está lista"
+            description="Al conectar WhatsApp, las nuevas conversaciones aparecerán aquí."
+          />
+        )}
+      </aside>
+      <div class="chat-main">
+        {selected ? (
+          <>
+            <div class="chat-heading">
+              <div>
+                <strong>{selected.client_name}</strong>
+                <div class="inline-actions" style="margin-top:8px">
+                  <a class="text-link" href={`/clientes/${selected.client_id}`}>
+                    Ver ficha
+                  </a>
+                  <a
+                    class="text-link"
+                    href={`/citas/nueva?cliente=${selected.client_id}`}
+                  >
+                    Agendar cita
+                    <Icon name="arrow" size={13} />
+                  </a>
+                </div>
+              </div>
+              <Form action="assign-conversation" class="inline-actions">
+                <input type="hidden" name="id" value={selected.id} />
+                {auth.role !== 'agent' && (
+                  <select name="user_id" aria-label="Asignar conversación">
+                    {members.map((m) => (
+                      <option
+                        value={m.id}
+                        selected={m.id === selected.assigned_to}
+                      >
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button class="button secondary small">
+                  {auth.role === 'agent' ? 'Tomar conversación' : 'Asignar'}
+                </button>
+              </Form>
+            </div>
+            <div
+              class="messages"
+              data-messages
+              data-conversation={selected.id}
+              data-timezone={auth.business.timezone}
+              aria-live="polite"
+            >
+              {messages.map((message) => (
+                <div class:list={['message', message.direction]}>
+                  <p>{message.body}</p>
+                  <small>
+                    {formatDate(
+                      message.created_at,
+                      auth.business.timezone,
+                      'HH:mm',
+                    )}{' '}
+                    · {messageLabels[message.status] || message.status}
+                  </small>
+                </div>
+              ))}
+            </div>
+            <Form
+              action="message"
+              back={`/whatsapp?conversacion=${selected.id}`}
+              class="chat-compose"
+            >
+              <input type="hidden" name="conversation_id" value={selected.id} />
+              <label>
+                <span>Mensaje</span>
+                <textarea
+                  name="body"
+                  required
+                  maxlength="4000"
+                  rows="2"
+                  placeholder="Escribe una respuesta…"
+                />
+              </label>
+              <button
+                class="button"
+                disabled={!alive || connection?.status !== 'connected'}
+              >
+                Enviar
+                <Icon name="arrow" size={16} />
+              </button>
+            </Form>
+          </>
+        ) : (
+          <Empty
+            icon="chat"
+            title="Todo empieza con un hola"
+            description="Vincula tu número para recibir nuevas consultas. El historial previo no se importa en esta versión."
+          />
+        )}
+      </div>
+    </div>
+  </section>
+  <p class="muted section-gap" style="font-size:11px">
+    Esta versión envía texto y señala los adjuntos para consultarlos en
+    WhatsApp. El conector no oficial puede desconectarse o dejar de funcionar;
+    usa un número de prueba para validar el piloto.
+  </p>
+</Layout>
+<script>
+  const connection = document.querySelector('[data-connection]');
+  const panel = document.querySelector<HTMLElement>('[data-qr-panel]');
+  const qr = document.querySelector<HTMLImageElement>('[data-qr]');
+  const list = document.querySelector<HTMLElement>('[data-messages]');
+  const states: Record<string, string> = {
+    connected: 'Conectado',
+    disconnected: 'Desconectado',
+    connecting: 'Conectando…',
+    qr: 'Escanea el QR',
+    reconnecting: 'Reconectando…',
+    offline: 'Worker no disponible',
+  };
+  const labels: Record<string, string> = {
+    queued: 'En cola',
+    sending: 'Enviando',
+    sent: 'Enviado',
+    delivered: 'Entregado',
+    read: 'Leído',
+    received: 'Recibido',
+    cancelled: 'Envío cancelado',
+    uncertain: 'Envío sin confirmar · revisa WhatsApp antes de repetir',
+  };
+  let previous = '';
+  async function update() {
+    if (document.hidden) return;
+    try {
+      const response = await fetch(
+        `/api/whatsapp?conversacion=${list?.dataset.conversation || ''}`,
+        { redirect: 'error' },
+      );
+      if (!response.ok) return;
+      const data = (await response.json()) as {
+        status: string;
+        qr: string | null;
+        messages: {
+          id: string;
+          direction: string;
+          body: string;
+          status: string;
+          created_at: string;
+        }[];
+      };
+      if (connection)
+        connection.textContent = states[data.status] || data.status;
+      if (panel && qr) {
+        panel.hidden = !data.qr;
+        if (data.qr) qr.src = data.qr;
+        else qr.removeAttribute('src');
+      }
+      const signature = JSON.stringify(
+        data.messages.map((m) => [m.id, m.status]),
+      );
+      if (list && signature !== previous) {
+        const nearBottom =
+          list.scrollTop + list.clientHeight >= list.scrollHeight - 60;
+        list.replaceChildren(
+          ...data.messages.map((message) => {
+            const item = document.createElement('div');
+            item.className = `message ${message.direction === 'out' ? 'out' : 'in'}`;
+            const body = document.createElement('p');
+            body.textContent = message.body;
+            const meta = document.createElement('small');
+            meta.textContent = `${new Intl.DateTimeFormat('es-MX', { hour: '2-digit', minute: '2-digit', timeZone: list.dataset.timezone }).format(new Date(message.created_at))} · ${labels[message.status] || message.status}`;
+            item.append(body, meta);
+            return item;
+          }),
+        );
+        if (nearBottom || !previous) list.scrollTop = list.scrollHeight;
+        previous = signature;
+      }
+      document
+        .querySelector<HTMLButtonElement>('.chat-compose button')
+        ?.toggleAttribute('disabled', data.status !== 'connected');
+    } catch {
+      if (connection)
+        connection.textContent = 'No se pudo actualizar la conexión';
+    }
+  }
+  if (list) list.scrollTop = list.scrollHeight;
+  void update();
+  const timer = setInterval(() => void update(), 4000);
+  window.addEventListener('pagehide', () => clearInterval(timer), {
+    once: true,
+  });
+</script>

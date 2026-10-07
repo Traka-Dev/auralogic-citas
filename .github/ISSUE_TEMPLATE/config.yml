@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Reportar una vulnerabilidad en privado
+    url: https://github.com/Traka-Dev/auralogic-citas/security/advisories/new
+    about: No incluyas datos sensibles en issues públicos.
+  - name: Instalación o adaptación por Auralogic
+    url: https://auralogic.dev/es/#contact
+    about: Solicita ayuda para integrar la herramienta en tu negocio.

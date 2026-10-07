@@ -1,0 +1,198 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import PageHeader from '../../components/PageHeader.astro';
+import Form from '../../components/Form.astro';
+import Status from '../../components/Status.astro';
+import Empty from '../../components/Empty.astro';
+import { db } from '../../lib/db';
+import { appointments, formatDate } from '../../lib/crm';
+import type { Client, Task } from '../../lib/types';
+const auth = Astro.locals.auth!;
+const store = db();
+const client = store.get<Client>(
+  'SELECT * FROM clients WHERE id=? AND business_id=?',
+  Astro.params.id!,
+  auth.business.id,
+);
+if (!client) return Astro.redirect('/clientes?error=Cliente%20no%20disponible');
+const notes = store.all<{
+  id: string;
+  content: string;
+  created_at: string;
+  name: string;
+}>(
+  'SELECT n.*,u.name FROM notes n JOIN users u ON n.author_id=u.id WHERE n.client_id=? AND n.business_id=? ORDER BY n.created_at DESC',
+  client.id,
+  auth.business.id,
+);
+const bookings = appointments(store, auth.business.id)
+  .filter((a) => a.client_id === client.id)
+  .reverse();
+const tasks = store.all<Task>(
+  'SELECT * FROM tasks WHERE client_id=? AND business_id=? AND done=0 ORDER BY due_at',
+  client.id,
+  auth.business.id,
+);
+---
+
+<Layout title={client.name}>
+  <PageHeader
+    title={client.name}
+    subtitle={`${client.source} · ${client.phone || 'Contacto de WhatsApp'}${client.archived ? ' · Archivado' : ''}`}
+    eyebrow="Ficha del cliente"
+  >
+    <a href="/clientes" class="button secondary">
+      Volver
+    </a>
+    {!client.archived && (
+      <a href={`/citas/nueva?cliente=${client.id}`} class="button">
+        Agendar cita
+      </a>
+    )}
+  </PageHeader>
+  <div class="grid-2">
+    <div class="stack">
+      <section class="panel padded">
+        <h2>Datos y preferencias</h2>
+        <Form action="client" class="form-grid section-gap">
+          <input type="hidden" name="id" value={client.id} />
+          <label>
+            Nombre
+            <input name="name" value={client.name} required maxlength="100" />
+          </label>
+          <label>
+            Teléfono
+            <input
+              type="tel"
+              name="phone"
+              value={client.phone || ''}
+              required
+              placeholder="+52…"
+            />
+          </label>
+          <label>
+            Correo
+            <input
+              type="email"
+              name="email"
+              value={client.email}
+              maxlength="254"
+            />
+          </label>
+          <label>
+            Etiquetas
+            <input name="tags" value={client.tags} maxlength="200" />
+          </label>
+          <div class="span-2 form-footer">
+            <span class="muted">
+              No envíes información sensible en las notas.
+            </span>
+            <button class="button">Guardar cambios</button>
+          </div>
+        </Form>
+        <Form action="archive" class="section-gap">
+          <input type="hidden" name="id" value={client.id} />
+          <input
+            type="hidden"
+            name="archived"
+            value={client.archived ? '0' : '1'}
+          />
+          <button class="button secondary small">
+            {client.archived ? 'Restaurar cliente' : 'Archivar cliente'}
+          </button>
+        </Form>
+      </section>
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Historial de citas</h2>
+          <span class="badge">{bookings.length} citas</span>
+        </div>
+        {bookings.length ? (
+          bookings.map((a) => (
+            <a class="agenda-row" href={`/citas/${a.id}`}>
+              <div class="agenda-person">
+                <strong>{a.service_name}</strong>
+                <p>
+                  {formatDate(a.starts_at, auth.business.timezone)} ·{' '}
+                  {a.staff_name}
+                </p>
+              </div>
+              <Status status={a.status} />
+            </a>
+          ))
+        ) : (
+          <Empty
+            title="Aún no hay citas"
+            description="La primera reserva aparecerá aquí junto con su estado."
+          />
+        )}
+      </section>
+    </div>
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Notas internas</h2>
+          <span class="badge">Solo tu equipo</span>
+        </div>
+        {notes.map((note) => (
+          <div class="note">
+            <p>{note.content}</p>
+            <small>
+              {note.name} ·{' '}
+              {formatDate(note.created_at, auth.business.timezone)}
+            </small>
+          </div>
+        ))}
+        <div style="padding:22px">
+          <Form action="note" class="form-stack">
+            <input type="hidden" name="client_id" value={client.id} />
+            <label>
+              Añadir nota
+              <textarea
+                name="content"
+                required
+                maxlength="2000"
+                rows="3"
+                placeholder="Preferencias de atención o detalles útiles…"
+              />
+            </label>
+            <button class="button secondary">Guardar nota</button>
+          </Form>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-heading">
+          <h2>Seguimientos</h2>
+        </div>
+        {tasks.map((t) => (
+          <div class="note">
+            <p>{t.title}</p>
+            <small>{formatDate(t.due_at, auth.business.timezone)}</small>
+          </div>
+        ))}
+        <div style="padding:22px">
+          <Form action="task" class="form-stack">
+            <input type="hidden" name="client_id" value={client.id} />
+            <label>
+              Próxima acción
+              <input
+                name="title"
+                required
+                maxlength="200"
+                placeholder="Confirmar próxima visita"
+              />
+            </label>
+            <label>
+              Cuándo
+              <input type="datetime-local" name="due_at" required />
+            </label>
+            <button class="button secondary">Crear seguimiento</button>
+            <small class="muted">
+              Recordatorio interno para ti. No envía mensajes automáticamente.
+            </small>
+          </Form>
+        </div>
+      </section>
+    </div>
+  </div>
+</Layout>

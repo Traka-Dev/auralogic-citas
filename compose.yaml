@@ -1,0 +1,38 @@
+services:
+  app:
+    build: .
+    ports:
+      - '127.0.0.1:4321:4321'
+    environment:
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:4321}
+      WHATSAPP_ENABLED: ${WHATSAPP_ENABLED:-false}
+      WHATSAPP_ENCRYPTION_KEY: ${WHATSAPP_ENCRYPTION_KEY:-}
+    volumes:
+      - auralogic-citas-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4321/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  whatsapp:
+    build: .
+    profiles: [whatsapp]
+    command: ['node', '--import', 'tsx', 'scripts/whatsapp-worker.ts']
+    environment:
+      WHATSAPP_ENABLED: 'true'
+      WHATSAPP_ENCRYPTION_KEY: ${WHATSAPP_ENCRYPTION_KEY:-}
+    volumes:
+      - auralogic-citas-data:/app/data
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+volumes:
+  auralogic-citas-data:
