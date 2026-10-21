@@ -42,7 +42,7 @@
     "verify": "npm run check && npm run lint && npm run format:check && npm test && npm run build"
   },
   "dependencies": {
-    "@astrojs/node": "11.1.7",
+    "@astrojs/node": "11.1.8",
     "@whiskeysockets/baileys": "6.7.24",
     "astro": "7.4.0",
     "libphonenumber-js": "^1.12.0",
